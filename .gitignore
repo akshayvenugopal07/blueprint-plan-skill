@@ -1,0 +1,6 @@
+# All plans and their review data
+/assets/
+
+node_modules/
+.blueprint/
+*.export.html

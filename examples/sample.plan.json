@@ -1,0 +1,188 @@
+{
+  "blueprint": 1,
+  "title": "Move checkout to a queued payment flow",
+  "summary": "Replace the synchronous card charge with a queued flow so a slow payment provider no longer blocks the page. See the **decision** at the end.",
+  "changelog": [
+    {
+      "draft": 1,
+      "summary": "First draft."
+    }
+  ],
+  "sections": [
+    {
+      "id": "goal",
+      "title": "Goal and current state",
+      "blocks": [
+        {
+          "id": "goal-text",
+          "type": "markdown",
+          "text": "Today `POST /checkout` waits for the payment provider before responding (`src/checkout.ts`).\n\n- p95 response time is **4.2s**\n- 1.3% of requests time out\n\nProvider guidance: [queued charges](https://docs.example.com/payments/queued)."
+        },
+        {
+          "id": "goal-note",
+          "type": "callout",
+          "tone": "warning",
+          "text": "Refunds share this code path."
+        }
+      ]
+    },
+    {
+      "id": "approach",
+      "title": "Proposed approach",
+      "blocks": [
+        {
+          "id": "flow",
+          "type": "diagram",
+          "title": "New request flow",
+          "mermaid": "flowchart LR\n  A[Browser] --> B[API]\n  B --> C[(Queue)]\n  C --> D[Worker]\n  D --> E[Provider]\n  D --> F[Notify browser]",
+          "caption": "The API returns as soon as the job is queued."
+        },
+        {
+          "id": "opts",
+          "type": "comparison",
+          "title": "Queue options",
+          "options": [
+            {
+              "id": "opt-sqs",
+              "title": "Managed queue",
+              "summary": "Use the cloud queue we already run.",
+              "pros": [
+                "No new infrastructure"
+              ],
+              "cons": [
+                "At-least-once delivery"
+              ],
+              "cost": "About 2 days",
+              "recommended": true
+            },
+            {
+              "id": "opt-db",
+              "title": "Database table",
+              "pros": [
+                "Transactional with the order"
+              ],
+              "cons": [
+                "Polling load"
+              ],
+              "cost": "About 4 days"
+            }
+          ]
+        },
+        {
+          "id": "steps",
+          "type": "steps",
+          "title": "Rollout",
+          "items": [
+            {
+              "id": "s1",
+              "title": "Add idempotency keys",
+              "detail": "Required before any retry.",
+              "status": "todo"
+            },
+            {
+              "id": "s2",
+              "title": "Ship worker behind a flag",
+              "status": "todo"
+            }
+          ]
+        },
+        {
+          "id": "tbl",
+          "type": "table",
+          "title": "Endpoints touched",
+          "columns": [
+            "Endpoint",
+            "Change",
+            "Risk"
+          ],
+          "rows": [
+            [
+              "`POST /checkout`",
+              "Returns 202",
+              "medium"
+            ],
+            [
+              "`GET /orders/:id`",
+              "Adds `payment_state`",
+              "low"
+            ]
+          ]
+        },
+        {
+          "id": "df",
+          "type": "diff",
+          "filename": "src/checkout.ts",
+          "language": "typescript",
+          "before": "const result = await provider.charge(order);\nreturn res.json(result);\n",
+          "after": "await queue.enqueue({ orderId: order.id });\nreturn res.status(202).json({ state: \"pending\" });\n"
+        },
+        {
+          "id": "cd",
+          "type": "code",
+          "filename": "worker.ts",
+          "language": "typescript",
+          "code": "export async function handle(job: Job) {\n  // charge exactly once\n  return provider.charge(job.orderId, { idempotencyKey: job.id });\n}"
+        },
+        {
+          "id": "mock",
+          "type": "html",
+          "title": "Pending state mock-up",
+          "html": "<div style=\"border:1px solid var(--border);border-radius:8px;padding:16px;max-width:320px\"><b>Payment pending</b><p style=\"color:var(--muted);margin:4px 0 12px\">We will email you when it completes.</p><svg viewBox=\"0 0 240 24\" width=\"240\" role=\"img\" aria-label=\"Progress\"><rect x=\"0\" y=\"8\" width=\"240\" height=\"8\" rx=\"4\" fill=\"var(--subtle)\" stroke=\"var(--border)\"/><rect x=\"0\" y=\"8\" width=\"96\" height=\"8\" rx=\"4\" fill=\"var(--accent)\"/></svg></div>",
+          "caption": "Shown after the order is accepted."
+        },
+        {
+          "id": "new-note",
+          "type": "callout",
+          "tone": "tip",
+          "text": "Queue is named `payments-main`."
+        }
+      ]
+    },
+    {
+      "id": "risks",
+      "title": "Risks and open questions",
+      "blocks": [
+        {
+          "id": "rk",
+          "type": "risks",
+          "items": [
+            {
+              "id": "r1",
+              "risk": "Double charge on retry",
+              "likelihood": "medium",
+              "impact": "high",
+              "mitigation": "Idempotency keys (step 1)."
+            }
+          ]
+        },
+        {
+          "id": "oq",
+          "type": "questions",
+          "items": [
+            {
+              "id": "q1",
+              "question": "Do refunds move to the queue too?"
+            }
+          ]
+        },
+        {
+          "id": "dec",
+          "type": "decision",
+          "question": "Which queue should we use?",
+          "kind": "single",
+          "options": [
+            {
+              "id": "d-sqs",
+              "label": "Managed queue",
+              "recommended": true
+            },
+            {
+              "id": "d-db",
+              "label": "Database table"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
