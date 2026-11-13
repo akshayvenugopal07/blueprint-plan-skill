@@ -40,8 +40,4 @@ node bin/blueprint.mjs verify
 
 ## Where plans and review data live
 
-All plans live in `assets/plans/<slug>/` inside the skill folder. `assets/` is git-ignored, so plans never end up in the skill's repository.
-
-Each plan folder holds the plan file, any exported HTML, and a `.blueprint/` folder with recorded drafts, the conversation, a server log (events only, no content), and attached images while a review is open. Delete a plan's folder to remove it and its history.
-
-Each installed copy of the skill (for example under `~/.cursor/skills` and `~/.claude/skills`) has its own `assets/` folder.
+Plans live in the project being worked on, at `blueprint/<slug>/<slug>.plan.json`. The `blueprint/` folder contains a `.gitignore` of `*`, so nothing in it is committed. Each plan folder also holds exported HTML and a `review/` folder with recorded drafts, the conversation, a server log (events only, no content), the files the agent and the review server exchange, and attached images while a review is open. Delete a plan's folder to remove it and its history.

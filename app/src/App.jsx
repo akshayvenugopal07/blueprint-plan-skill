@@ -686,7 +686,7 @@ export default function App() {
         {server.ended && <div className="px-4 py-2 bg-done-subtle border-b border-line text-[13px]">This review has ended. The page is read-only and you can close this tab.</div>}
         {server.planError && (
           <div className="px-4 py-2 bg-attention-subtle border-b border-line text-[13px]">
-            <span className="font-semibold">The agent's newest edit has errors, so you are still seeing draft {latest}.</span> The agent has been told:
+            <span className="font-semibold">The agent's latest revision didn't pass validation, so you are still seeing draft {latest}.</span> It has been told to fix:
             <ul className="list-disc pl-5 font-mono text-[12px]">
               {server.planError.errors.slice(0, 5).map((error, i) => (
                 <li key={i}>{error}</li>
@@ -853,8 +853,12 @@ export default function App() {
                   <div className="border-t border-line p-3 flex flex-col gap-2 bg-subtle">
                     {!STATIC && !server.ended && (
                       <div className="text-[12px] text-muted flex items-center gap-2">
-                        <span className={`inline-block w-2 h-2 rounded-full ${server.agentListening ? "bg-success" : "bg-attention"}`} />
-                        {server.agentListening ? "Agent is listening for your feedback" : "Agent is busy or not listening - notes are delivered when it next checks in"}
+                        <span className={`inline-block w-2 h-2 rounded-full ${server.revising ? "bg-accent" : server.agentListening ? "bg-success" : "bg-attention"}`} />
+                        {server.revising
+                          ? "Agent is revising the plan - the new draft appears when it is done"
+                          : server.agentListening
+                            ? "Agent is listening for your feedback"
+                            : "Agent is busy or not listening - notes are delivered when it next checks in"}
                       </div>
                     )}
                     <textarea

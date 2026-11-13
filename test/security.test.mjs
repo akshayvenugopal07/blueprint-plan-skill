@@ -16,7 +16,6 @@ const planPath = path.join(dir, "t.plan.json");
 const plan = { blueprint: 1, title: "T", sections: [{ id: "s", title: "S", blocks: [{ id: "b", type: "markdown", text: "hi" }] }] };
 const cli = (...args) => JSON.parse(execFileSync(process.execPath, [CLI, ...args], { encoding: "utf8" }));
 let port;
-let token;
 let launchUrl;
 let cookie;
 
@@ -38,7 +37,6 @@ before(() => {
   const opened = cli("open", planPath, "--no-browser");
   launchUrl = new URL(opened.launch_url);
   port = Number(launchUrl.port);
-  token = JSON.parse(fs.readFileSync(path.join(dir, ".blueprint/t.plan/session.json"), "utf8")).token;
 });
 after(() => {
   try {
@@ -52,9 +50,9 @@ test("integrity manifest matches shipped files", () => {
   assert.equal(cli("verify").status, "verified");
 });
 
-test("session file is private to the owner", { skip: process.platform === "win32" }, () => {
-  const mode = fs.statSync(path.join(dir, ".blueprint/t.plan/session.json")).mode & 0o777;
-  assert.equal(mode, 0o600);
+test("review folder is private to the owner", { skip: process.platform === "win32" }, () => {
+  assert.equal(fs.statSync(path.join(dir, ".blueprint/t.plan/inbox")).mode & 0o777, 0o700);
+  assert.equal(fs.statSync(path.join(dir, ".blueprint/t.plan/server.json")).mode & 0o777, 0o600);
 });
 
 test("no page or API without a session cookie", async () => {
@@ -65,7 +63,6 @@ test("no page or API without a session cookie", async () => {
 
 test("wrong Host header is refused (DNS rebinding)", async () => {
   assert.equal((await req({ route: "/", host: "evil.example" })).status, 403);
-  assert.equal((await req({ route: "/cli/status", host: `evil.example:${port}`, headers: { Authorization: `Bearer ${token}` } })).status, 403);
 });
 
 test("launch code works exactly once and sets an HttpOnly, SameSite=Strict cookie", async () => {
@@ -107,12 +104,10 @@ test("cross-site and forged writes are refused", async () => {
   assert.equal((await post(good)).status, 200, "legitimate write");
 });
 
-test("CLI routes need the bearer token and reject browsers", async () => {
-  assert.equal((await req({ route: "/cli/status" })).status, 401);
-  assert.equal((await req({ route: "/cli/status", headers: { Authorization: "Bearer wrong" } })).status, 401);
-  assert.equal((await req({ route: "/cli/status", headers: { Authorization: `Bearer ${token}`, Origin: "http://x" } })).status, 403);
-  assert.equal((await req({ route: "/cli/status", headers: { Cookie: cookie } })).status, 403);
-  assert.equal((await req({ route: "/cli/status", headers: { Authorization: `Bearer ${token}` } })).status, 200);
+test("there are no agent routes over HTTP", async () => {
+  for (const route of ["/cli/status", "/cli/poll", "/cli/reply", "/cli/launch"]) {
+    assert.equal((await req({ route, headers: { Cookie: cookie } })).status, 404, route);
+  }
 });
 
 test("no path traversal or arbitrary file reads", async () => {
@@ -143,7 +138,7 @@ test("feedback is reduced to known fields and delivered with a handling note", a
   const headers = { Cookie: cookie, Origin: `http://127.0.0.1:${port}`, "X-Blueprint-Request": "1", "Content-Type": "application/json" };
   const body = JSON.stringify({ items: [{ comment: "c", evil: "x", __proto__: { a: 1 }, target: { kind: "nonsense", blockId: "../../x", extra: 1 }, attachments: ["../../etc/passwd"] }] });
   assert.equal((await req({ method: "POST", route: "/api/feedback", headers, body })).status, 200);
-  const polled = cli("poll", planPath, "--wait", "2");
+  const polled = cli("poll", planPath, "--wait", "3");
   assert.equal(polled.status, "feedback");
   assert.match(polled.handling, /confirm with the user/);
   const item = polled.batches.at(-1).items[0];
@@ -177,6 +172,5 @@ test("runtime files contain no network client, shell, or eval", () => {
     assert.doesNotMatch(source, /child_process|node:https|node:net"|node:dgram|node:dns|fetch\(|\beval\(|new Function|http\.request|http\.get/, file);
   }
   const cliSource = fs.readFileSync(CLI, "utf8");
-  assert.doesNotMatch(cliSource, /node:https|fetch\(|\beval\(|new Function|shell:\s*true|[^.]\bexec\(|execSync/);
-  assert.equal((cliSource.match(/host: "127\.0\.0\.1"/g) || []).length, 1, "the CLI may only ever talk to 127.0.0.1");
+  assert.doesNotMatch(cliSource, /node:http|node:https|node:net|fetch\(|\beval\(|new Function|shell:\s*true|[^.]\bexec\(|execSync/);
 });
